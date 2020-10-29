@@ -1,0 +1,32 @@
+[gd_scene format=2]
+
+[node name="NamedNode" type="Node2D"]
+
+[node name="ChildSprite" type="AnimatedSprite" parent="."]
+
+[node name="Control" type="Control" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Control"]
+margin_right = 1024.0
+margin_bottom = 439.0
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Button" type="Button" parent="Control/HBoxContainer"]
+margin_right = 510.0
+margin_bottom = 439.0
+size_flags_horizontal = 3
+text = "Left"
+
+[node name="Button2" type="Button" parent="Control/HBoxContainer"]
+margin_left = 514.0
+margin_right = 1024.0
+margin_bottom = 439.0
+size_flags_horizontal = 3
+text = "Right"

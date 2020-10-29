@@ -1,0 +1,30 @@
+<Node2D:NamedNode>
+  <AnimatedSprite:ChildSprite />
+  <Control
+    @_edit_use_anchors_=false
+
+    anchor_right=1.0
+    anchor_bottom=1.0
+  >
+    <HBoxContainer
+      @_edit_use_anchors_=false
+
+      margin_right=1024.0
+      margin_bottom=439.0
+    >
+      <Button
+        margin_right=510.0
+        margin_bottom=439.0
+        size_flags_horizontal=3
+        text="Left"
+      />
+      <Button:Button2
+        margin_left=514.0
+        margin_right=1024.0
+        margin_bottom=439.0
+        size_flags_horizontal=3
+        text="Right"
+      />
+    </HBoxContainer>
+  </Control>
+</Node2D>

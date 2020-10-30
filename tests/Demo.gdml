@@ -22,9 +22,17 @@
         margin_left=514.0
         margin_right=1024.0
         margin_bottom=439.0
+		rect_min_size=Vector2( 10, 10 )
         size_flags_horizontal=3
         text="Right"
       />
     </HBoxContainer>
   </Control>
+  <Polygon2D
+    polygon=PoolVector2Array( 3, 5, 8, 2, 0, 4 )
+    polygons=[ 
+	  Color( 0, 0, 0, 1 ),
+	  Transform( 1, 0, 0, 0, 6, 0, 0, 0, 1, 0, 0, 0 )
+	]
+  />
 </Node2D>

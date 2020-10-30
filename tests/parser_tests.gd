@@ -17,6 +17,7 @@ func _run():
 		printerr("Failed to read the tests directory, aborting...")
 		return
 	
+	print("")
 	var file_name = test_dir.get_next()
 	while (!file_name.empty()):
 		var file_path = "res://tests/parser/" + file_name
@@ -26,8 +27,13 @@ func _run():
 		var scene_tree = parser.get_scene_tree()
 		if (!scene_tree.empty()):
 			print("Root node is " + scene_tree.node_class + (" named " + scene_tree.node_name if scene_tree.node_class != scene_tree.node_name else ""))
-			print(scene_tree.attributes)
+			if (!scene_tree.attributes.empty()):
+				print("Root node has the following attributes:")
+				print(var2str(scene_tree.attributes))
 		parser.close()
 		file_name = test_dir.get_next()
+		print("-----")
+		print("")
 	
+	print("")
 	print("Finished parser tests.")

@@ -1,0 +1,5 @@
+<Node2D
+  rect_min_size=Vector2( 10, 20 )
+  broken_vector=Vector2( 10, "(0)", 20 )
+>
+</Node2D>

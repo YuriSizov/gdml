@@ -1,4 +1,6 @@
-[gd_scene format=2]
+[gd_scene load_steps=2 format=2]
+
+[ext_resource path="res://tests/Demo.CustomNode.gd" type="Script" id=1]
 
 [node name="NamedNode" type="Node2D"]
 
@@ -28,5 +30,14 @@ text = "Left"
 margin_left = 514.0
 margin_right = 1024.0
 margin_bottom = 439.0
+rect_min_size = Vector2( 10, 10 )
 size_flags_horizontal = 3
 text = "Right"
+
+[node name="Polygon2D" type="Polygon2D" parent="."]
+polygon = PoolVector2Array( 3, 5, 8, 2, 0, 4 )
+polygons = [ Color( 0, 0, 0, 1 ), Transform( 1, 0, 0, 0, 6, 0, 0, 0, 1, 0, 0, 0 ) ]
+
+[node name="CustomNode" type="Node2D" parent="."]
+script = ExtResource( 1 )
+ref_node = NodePath("../Control/HBoxContainer")

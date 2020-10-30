@@ -1,0 +1,2 @@
+<Node2D dict={ "a": true, "b": false, "c": "{}", "d": Rect2(1, 2, 3, 4), "e": { "f": 2 } }>
+</Node2D>

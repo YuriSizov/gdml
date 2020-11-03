@@ -28,6 +28,8 @@ const TK_DICT_BEGIN : String = "{"
 const TK_DICT_END : String = "}"
 const TK_TYPE_LITERAL_BEGIN : String = "("
 const TK_TYPE_LITERAL_END : String = ")"
+const TK_EXTERNAL : String = "#"
+const TK_EXTERNAL_REF : String = "&"
 
 const TK_LF : String = "\n"
 const TK_CR : String = "\r"
@@ -87,21 +89,39 @@ const TOKEN_PATTERNS : Dictionary = {
 	],
 }
 
+class GDExternalResource:
+	var res_type : String = ""
+	var res_name : String = ""
+	var attributes : Dictionary = {}
+
+class GDExternalReference:
+	var res_name : String = ""
+
+class GDTag:
+	var node_class : String = "Node"
+	var node_name : String = ""
+	var attributes : Dictionary = {}
+	var external : bool = false
+	var parent : GDTag
+	var children : Array = []
+
 var _file : File
 var _file_content : String
-var _scene_tree : Dictionary
+var _scene_tree : GDTag
+var _external : Dictionary
 
 var _cursor : int = 0
 var _line_number : int = 1
 var _char_number : int = 0
 var _current_token : String = ""
-var _current_tag : Dictionary = {}
+var _current_tag : GDTag = null
 var _context : int = CONTEXT_DOCUMENT
 
 func _init() -> void:
 	_file = null
 	_file_content = ""
-	_scene_tree = {}
+	_scene_tree = null
+	_external = {}
 
 func open(file_path : String) -> int:
 	# Gracefully close a file if it exists
@@ -117,40 +137,38 @@ func open(file_path : String) -> int:
 	return OK
 
 func close() -> void:
-	_scene_tree = {}
+	_file_content = ""
+	_scene_tree = null
+	_external = {}
 	
 	if (_file != null):
 		_file.close()
 		_file = null
 
-func get_scene_tree() -> Dictionary:
+func get_scene_tree() -> GDTag:
 	return _scene_tree
 
 func _parse() -> void:
-	_scene_tree = {}
+	_scene_tree = null
+	_external = {}
 	
-	# TODO: Implement a state machine parser
-	# TODO: Parser must support contexts to be able to parse strings without breaking the document and to support dictionaries and arrays as values
-	# 
 	# Document must have only one root node; this can be a recoverable error (just ignore any additional root nodes)
 	# Tags must be either self-closing or have a closing counterpart
 	# Tag and attribute names must be an alpha-numeric sequence, first character cannot be a number; additionally "_" (underscore) is supported, while " " (whitespace) is not supported
-	# Tags are mapped one to one to qualified Node-derived class names; tags starting with "#" (hash) are used for special cases, like instanced children
-	# ^ User-defined node names are stored in a "name" attribute instead (TODO: Change to something that won't conflict, maybe use a special character)
-	# Attributes are mapped one to one to each Node's properties; attributes starting with "@" (at) are mapped to the __meta__ properties 
-	# ^ Other special characters may be introduced in future
+	# Tags without any prefix are mapped one to one to qualified Node-derived class names; custom names can be provided following ":" (colon)
+	# Tags prefixed with "#" (hash) and "&" (ampersand) are used for external resources; in place of custom names they have identifiers that should be used for referencing
+	# Attributes are mapped one to one to each Node's properties
+	# Attributes starting with "@" (at) are mapped to the __meta__ properties 
 	# Attribute values must be one of the following types: int, float, string, boolean, a reference to a resource or another dictionary type, an array or a dictionary of everything above
 	# ^ See also TSCN serialization for all supported types and their string conversions
 	
 	_cursor = 0
 	_line_number = 1
 	_char_number = 0
-	_current_tag = {}
+	_current_tag = null
 	_file_content = _file.get_as_text()
 	
-	var _found_root := false
 	var _parse_failed := false
-	
 	while (_cursor < _file_content.length()):
 		# Find the next tag.
 		var tag_found = _parse_document()
@@ -164,7 +182,7 @@ func _parse() -> void:
 			_parse_failed = true
 			break
 	
-	if (_scene_tree.empty()):
+	if (_scene_tree == null):
 		printerr("Document is empty")
 
 func _advance_line(by_number : int = 1) -> void:
@@ -173,6 +191,9 @@ func _advance_line(by_number : int = 1) -> void:
 
 func _advance_char(by_number : int = 1) -> void:
 	_char_number = _char_number + by_number
+
+func _print_error(message : String, at_line : int, at_char : int) -> void:
+	printerr(message + " at line " + str(at_line) + ", position " + str(at_char))
 
 func _is_whitespace(token : String) -> bool:
 	var sanitized_token := token.strip_edges()
@@ -239,121 +260,165 @@ func _parse_document() -> bool:
 			found_tag = true
 			break
 		
-		printerr("Unexpected token '" + next_token + "' at line " + str(_line_number) + ", position " + str(_char_number - next_token.length()))
+		_print_error("Unexpected token '" + next_token + "'", _line_number, _char_number - next_token.length())
 		break
 	
 	return found_tag
 
 # In Tag context we parse closing and opening tags including all attributes.
-func _parse_tag() -> bool:	
+func _parse_tag() -> bool:
 	# Check if we've entered a closing tag.
 	if (_current_token == TK_TAG_BEGIN_CLOSING):
-		if (_current_tag.empty()):
-			printerr("Attempting to close a non-existent tag at root at line " + str(_line_number) + ", position " + str(_char_number - _current_token.length()))
-			return false
-		
-		var tag_name := ""
-		var tag_start_number = _char_number
-		
-		while (_cursor < _file_content.length()):
-			_context = CONTEXT_TAG
-			var next_token := _get_next_token()
-			
-			# Caught a newline.
-			if (_is_newline(next_token)):
-				printerr("Unexpected newline token at line " + str(_line_number) + ", position " + str(_char_number - next_token.length()))
-				break
-			# Caught a whitespace-like character.
-			if (_is_whitespace(next_token)):
-				printerr("Unexpected whitespace token at line " + str(_line_number) + ", position " + str(_char_number - next_token.length()))
-				break
-			# Found the end of the tag.
-			if (next_token == TK_TAG_END):
-				break
-			
-			tag_name = tag_name + next_token
-		
-		if (!tag_name.is_valid_identifier()):
-			printerr("Closing tag has an invalid identifier '" + tag_name + "' at line " + str(_line_number) + ", position " + str(tag_start_number))
-			return false
-		
-		if (_current_tag.node_class != tag_name):
-			printerr("Attempting to close a non-existent tag '" + tag_name + "' at line " + str(_line_number) + ", position " + str(tag_start_number - _current_token.length()))
-			return false
-		
-		# The tag is closed, move one level up.
-		_current_tag = _current_tag.parent
-		return true
-	
-	# We are attempting to parse an opening tag.
+		return _parse_closing_tag()
+	# Otherwise, we are attempting to parse an opening tag.
 	else:
-		var tag_name := ""
-		var tag_parsed := false
-		var tag_self_closing := false
-		var tag_start_number = _char_number
+		return _parse_opening_tag()
+
+func _parse_opening_tag() -> bool:
+	var tag_name := ""
+	var tag_parsed := false
+	var tag_self_closing := false
+	var tag_external := false
+	var tag_external_ref := false
+	var tag_start_position = _char_number
+	
+	var node_name := ""
+	var parsing_node_name := false
+	
+	while (_cursor < _file_content.length()):
+		_context = CONTEXT_TAG
+		var next_token := _get_next_token()
 		
-		var node_name := ""
-		var parsing_node_name := false
+		# Caught a newline or a whitespace-like character.
+		if (_is_newline(next_token) || _is_whitespace(next_token)):
+			break
+		# Found the end of the tag.
+		if (next_token == TK_TAG_END):
+			tag_parsed = true
+			break
+		# Found the end of the self-closing tag.
+		if (next_token == TK_TAG_END_CLOSING):
+			tag_parsed = true
+			tag_self_closing = true
+			break
+		# Found the special character for defining the node name.
+		if (next_token == TK_TAG_NAME):
+			parsing_node_name = true
+			continue
 		
-		while (_cursor < _file_content.length()):
-			_context = CONTEXT_TAG
-			var next_token := _get_next_token()
-			
-			# Caught a newline or a whitespace-like character.
-			if (_is_newline(next_token) || _is_whitespace(next_token)):
-				break
-			# Found the end of the tag.
-			if (next_token == TK_TAG_END):
-				tag_parsed = true
-				break
-			# Found the end of the self-closing tag.
-			if (next_token == TK_TAG_END_CLOSING):
-				tag_parsed = true
+		if (parsing_node_name):
+			node_name = node_name + next_token
+		else:
+			tag_name = tag_name + next_token
+	
+	if (tag_name.begins_with(TK_EXTERNAL)):
+		tag_external = true
+		tag_name = tag_name.trim_prefix(TK_EXTERNAL)
+	elif (tag_name.begins_with(TK_EXTERNAL_REF)):
+		tag_external_ref = true
+		tag_name = tag_name.trim_prefix(TK_EXTERNAL_REF)
+		
+		if (!_external.has(tag_name) || _external[tag_name].res_type != "PackedScene"):
+			_print_error("External scene has an undefined identifier '" + tag_name + "'", _line_number, tag_start_position)
+			return false
+	
+	if (!tag_name.is_valid_identifier()):
+		_print_error("Opening tag has an invalid identifier '" + tag_name + "'", _line_number, tag_start_position)
+		return false
+	if (!node_name.empty() && !node_name.is_valid_identifier()):
+		_print_error("Opening tag has an invalid node name '" + node_name + "'", _line_number, tag_start_position)
+		return false
+	
+	if (tag_external):
+		if (node_name.empty()):
+			_print_error("External resource tag is missing an identifier", _line_number, tag_start_position + tag_name.length())
+			return false
+		if (_external.has(node_name)):
+			_print_error("External resource tag has a duplicate identifier '" + node_name + "'", _line_number, tag_start_position + tag_name.length())
+			return false
+		
+		var external_struct := GDExternalResource.new()
+		external_struct.res_type = tag_name
+		external_struct.res_name = node_name
+		
+		_external[node_name] = external_struct
+		
+		if (!tag_parsed):
+			external_struct.attributes = _parse_attributes()
+			if (_current_token == TK_TAG_END_CLOSING): # Self-closing.
 				tag_self_closing = true
-				break
-			# Found the special character for defining the node name.
-			if (next_token == TK_TAG_NAME):
-				parsing_node_name = true
-				continue
-			
-			if (parsing_node_name):
-				node_name = node_name + next_token
-			else:
-				tag_name = tag_name + next_token
 		
-		if (!tag_name.is_valid_identifier()):
-			printerr("Opening tag has an invalid identifier '" + tag_name + "' at line " + str(_line_number) + ", position " + str(tag_start_number))
-			return false
-		if (!node_name.empty() && !node_name.is_valid_identifier()):
-			printerr("Opening tag has an invalid node name '" + node_name + "' at line " + str(_line_number) + ", position " + str(tag_start_number))
+		if (!tag_self_closing):
+			_print_error("External resource tag is not self-closing; content will be ignored", _line_number, tag_start_position - 1)
 			return false
 		
-		var tag_struct := {
-			"node_class": tag_name,
-			"node_name": node_name if !node_name.empty() else tag_name,
-			"attributes": {},
-			"parent": _current_tag,
-			"children": [],
-		}
+	else:
+		var tag_struct := GDTag.new()
+		tag_struct.node_class = tag_name
+		tag_struct.node_name = node_name if !node_name.empty() else tag_name
+		tag_struct.parent = _current_tag
 		
-		if (_scene_tree.empty()):
+		if (tag_external_ref):
+			tag_struct.external = true
+		
+		if (_scene_tree == null):
 			_scene_tree = tag_struct
-		elif (!_current_tag.empty()):
+		elif (_current_tag != null):
 			_current_tag.children.append(tag_struct)
 		else:
-			printerr("Document has multiple root nodes; only the first one is used, the rest are ignored.")
+			_print_error("Document has multiple root nodes; additional root node is ignored ", _line_number, tag_start_position - 1)
 			return false
+		
+		if (!tag_parsed):
+			tag_struct.attributes = _parse_attributes()
+			if (_current_token == TK_TAG_END_CLOSING): # Self-closing.
+				tag_self_closing = true
 		
 		if (!tag_self_closing):
 			_current_tag = tag_struct
-		if (!tag_parsed):
-			_parse_attributes()
-		return true
 	
-	return false
+	return true
 
-func _parse_attributes() -> bool:
-	var tag_self_closing := false
+func _parse_closing_tag() -> bool:
+	if (_current_tag == null):
+		_print_error("Attempting to close a non-existent tag at root", _line_number, _char_number - _current_token.length())
+		return false
+	
+	var tag_name := ""
+	var tag_start_position = _char_number
+	
+	while (_cursor < _file_content.length()):
+		_context = CONTEXT_TAG
+		var next_token := _get_next_token()
+		
+		# Caught a newline.
+		if (_is_newline(next_token)):
+			_print_error("Unexpected newline token", _line_number, _char_number - next_token.length())
+			break
+		# Caught a whitespace-like character.
+		if (_is_whitespace(next_token)):
+			_print_error("Unexpected whitespace token", _line_number, _char_number - next_token.length())
+			break
+		# Found the end of the tag.
+		if (next_token == TK_TAG_END):
+			break
+		
+		tag_name = tag_name + next_token
+	
+	if (!tag_name.is_valid_identifier()):
+		_print_error("Closing tag has an invalid identifier '" + tag_name + "'", _line_number, tag_start_position)
+		return false
+	
+	if (_current_tag.node_class != tag_name):
+		_print_error("Attempting to close a non-existent tag '" + tag_name + "'", _line_number, tag_start_position - _current_token.length())
+		return false
+	
+	# The tag is closed, move one level up.
+	_current_tag = _current_tag.parent
+	return true
+
+func _parse_attributes() -> Dictionary:
+	var attributes := {}
 	var attribute_name := ""
 	var attribute_value = null
 	
@@ -363,16 +428,12 @@ func _parse_attributes() -> bool:
 		
 		# Caught a newline or a whitespace-like character.
 		if (_is_newline(next_token) || _is_whitespace(next_token)):
-			_collect_attribute(attribute_name, attribute_value)
+			_collect_attribute(attributes, attribute_name, attribute_value)
 			attribute_name = ""
 			attribute_value = null
 			continue
 		# Found the end of the tag.
-		if (next_token == TK_TAG_END):
-			break
-		# Found the end of the self-closing tag.
-		if (next_token == TK_TAG_END_CLOSING):
-			tag_self_closing = true
+		if (next_token == TK_TAG_END || next_token == TK_TAG_END_CLOSING):
 			break
 		# Found a special character that delimits the attribute's value.
 		if (next_token == TK_ATTR_VALUE):
@@ -382,33 +443,26 @@ func _parse_attributes() -> bool:
 		attribute_name = attribute_name + next_token
 	
 	if (!attribute_name.empty()):
-		_collect_attribute(attribute_name, attribute_value)
+		_collect_attribute(attributes, attribute_name, attribute_value)
 	
-	if (tag_self_closing):
-		_current_tag = _current_tag.parent
-	
-	return true
+	return attributes
 
-func _collect_attribute(name : String, value) -> bool:
-	if (_current_tag.empty()):
-		return false
+func _collect_attribute(attributes : Dictionary, name : String, value) -> void:
 	if (name.empty() || value == null):
-		return false
+		return
 	
 	if (name.begins_with(TK_ATTR_META)):
 		var meta_name = name.trim_prefix(TK_ATTR_META)
 		if (!meta_name.is_valid_identifier()):
-			printerr("Meta attribute has an invalid identifier '" + meta_name + "' at line " + str(_line_number) + ", position " + str(_char_number - meta_name.length()))
+			_print_error("Meta attribute has an invalid identifier '" + meta_name + "'", _line_number, _char_number - meta_name.length())
 		
-		if (!_current_tag.attributes.has("__meta__")):
-			_current_tag.attributes["__meta__"] = {}
-		_current_tag.attributes["__meta__"][meta_name] = value
+		if (!attributes.has("__meta__")):
+			attributes["__meta__"] = {}
+		attributes["__meta__"][meta_name] = value
 	else:
 		if (!name.is_valid_identifier()):
-			printerr("Attribute has an invalid identifier '" + name + "' at line " + str(_line_number) + ", position " + str(_char_number - name.length()))
-		_current_tag.attributes[name] = value
-	
-	return true
+			_print_error("Attribute has an invalid identifier '" + name + "'", _line_number, _char_number - name.length())
+		attributes[name] = value
 
 func _parse_value(): # -> Variant
 	var parsed_value = null
@@ -423,6 +477,9 @@ func _parse_value(): # -> Variant
 		parsed_value = _parse_array()
 	elif (first_token == TK_DICT_BEGIN):
 		parsed_value = _parse_dictionary()
+	# Check if the value is an external resource reference.
+	elif (first_token == TK_EXTERNAL_REF):
+		parsed_value = _parse_reference()
 	# Otherwise, start collecting the literal value.
 	else:
 		parsed_value = _parse_literal()
@@ -438,7 +495,7 @@ func _parse_string() -> String:
 		
 		# Caught a newline character.
 		if (_is_newline(next_token)):
-			printerr("Unexpected newline token in string literal at line " + str(_line_number) + ", position " + str(_char_number))
+			_print_error("Unexpected newline token in a string literal", _line_number, _char_number)
 			break
 		# Found the end of the string.
 		if (next_token == TK_STRING_DELIMITER):
@@ -501,6 +558,36 @@ func _parse_dictionary() -> Dictionary:
 		parsed_dictionary = parsed_dictionary + next_token
 		
 	return str2var(parsed_dictionary)
+
+func _parse_reference() -> GDExternalReference:
+	var parsed_reference := ""
+	var attribute_position := _char_number
+	
+	while (_cursor < _file_content.length()):
+		_context = CONTEXT_LITERAL
+		var next_token := _get_next_token()
+		
+		# Caught a newline or a whitespace-like character.
+		if (_is_newline(next_token) || _is_whitespace(next_token)):
+			break
+		# Found the end of the tag.
+		if (next_token == TK_TAG_END || next_token == TK_TAG_END_CLOSING):
+			break
+		
+		parsed_reference = parsed_reference + next_token
+	
+	if (!parsed_reference.is_valid_identifier()):
+		_print_error("External reference attribute has an invalid identifier '" + parsed_reference + "'", _line_number - 1, attribute_position)
+		return null
+	
+	if (!_external.has(parsed_reference)):
+		_print_error("External reference attribute has an undefined identifier '" + parsed_reference + "'", _line_number - 1, attribute_position)
+		return null
+	
+	var ext_reference = GDExternalReference.new()
+	ext_reference.res_name = parsed_reference
+	
+	return ext_reference
 
 func _parse_literal(): # -> Variant
 	# Here by literals we mean integers, floats, booleans, and serialized built-in types, such as Vector2.

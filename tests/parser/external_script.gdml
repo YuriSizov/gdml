@@ -1,0 +1,5 @@
+<#Script:CustomNode path="res://tests/Demo.CustomNode.gd" />
+
+<Node2D:CustomNode
+  script=&CustomNode
+/>

@@ -1,0 +1,5 @@
+<#PackedScene:SubScene path="res://tests/Demo.SubScene.tscn" />
+
+<Node2D>
+  <&SubScene1 />
+</Node2D>

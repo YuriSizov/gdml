@@ -92,7 +92,7 @@ const TOKEN_PATTERNS : Dictionary = {
 class GDExternalResource:
 	var res_type : String = ""
 	var res_name : String = ""
-	var attributes : Dictionary = {}
+	var res_path : String = ""
 
 class GDExternalReference:
 	var res_name : String = ""
@@ -148,6 +148,10 @@ func close() -> void:
 func get_scene_tree() -> GDTag:
 	return _scene_tree
 
+func get_external_resources() -> Dictionary:
+	return _external
+
+### Parser subroutines ###
 func _parse() -> void:
 	_scene_tree = null
 	_external = {}
@@ -344,7 +348,9 @@ func _parse_opening_tag() -> bool:
 		_external[node_name] = external_struct
 		
 		if (!tag_parsed):
-			external_struct.attributes = _parse_attributes()
+			var attributes = _parse_attributes()
+			if (attributes.has("path")):
+				external_struct.res_path = attributes["path"]
 			if (_current_token == TK_TAG_END_CLOSING): # Self-closing.
 				tag_self_closing = true
 		
@@ -627,3 +633,63 @@ func _parse_literal(): # -> Variant
 		parsed_literal = parsed_literal + next_token
 	
 	return str2var(parsed_literal)
+
+### Scene builder methods & subroutines ###
+func generate_scene() -> Node:
+	if (_scene_tree == null):
+		return null
+	
+	var root := _instance_node(_scene_tree)
+	if (root == null):
+		printerr("Failed to generate the root for the scene.")
+		return null
+	
+	return root
+
+func _instance_node(tag_struct : GDTag, parent : Node = null, root : Node = null) -> Node:
+	var node : Node
+	
+	if (tag_struct.external):
+		var external_ref = _external[tag_struct.node_class]
+		var external_scene : PackedScene = load(external_ref.res_path)
+		node = external_scene.instance()
+	else:
+		if (!ClassDB.can_instance(tag_struct.node_class)):
+			printerr("The root node cannot be instanced by ClassDB.")
+			return null
+		node = ClassDB.instance(tag_struct.node_class)
+	
+	node.name = tag_struct.node_name
+	
+	if (tag_struct.attributes.has("script")):
+		var attribute_value = tag_struct.attributes["script"]
+		
+		var external_value_ref = _external[attribute_value.res_name]
+		var external_value = load(external_value_ref.res_path)
+		attribute_value = external_value.new()
+		
+		node.set_script(external_value)
+	
+	for attribute_name in tag_struct.attributes:
+		if (attribute_name == "script"):
+			continue # Already handled.
+		
+		var attribute_value = tag_struct.attributes[attribute_name]
+		if (attribute_value is GDExternalReference):
+			var external_value_ref = _external[attribute_value.res_name]
+			var external_value = load(external_value_ref.res_path)
+			attribute_value = external_value.new()
+		
+		node.set(attribute_name, attribute_value)
+	
+	if (parent != null):
+		parent.add_child(node)
+	if (root != null):
+		node.owner = root
+	else:
+		root = node
+	
+	for child_tag in tag_struct.children:
+		_instance_node(child_tag, node, root)
+	
+	return node

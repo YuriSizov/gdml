@@ -25,7 +25,7 @@ func _run():
 		
 		parser.open(file_path)
 		var scene_tree = parser.get_scene_tree()
-		if (!scene_tree == null):
+		if (scene_tree != null):
 			print("Root node is " + scene_tree.node_class + (" named " + scene_tree.node_name if scene_tree.node_class != scene_tree.node_name else ""))
 			if (!scene_tree.attributes.empty()):
 				print("Root node has the following attributes:")

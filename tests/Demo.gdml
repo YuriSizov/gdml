@@ -34,9 +34,9 @@
   <Polygon2D
     polygon=PoolVector2Array( 3, 5, 8, 2, 0, 4 )
     polygons=[ 
-    Color( 0, 0, 0, 1 ),
-    Transform( 1, 0, 0, 0, 6, 0, 0, 0, 1, 0, 0, 0 )
-  ]
+      Color( 0, 0, 0, 1 ),
+      Transform( 1, 0, 0, 0, 6, 0, 0, 0, 1, 0, 0, 0 )
+    ]
   >
   <&SubScene />
   <&SubScene:SubScene2 />
